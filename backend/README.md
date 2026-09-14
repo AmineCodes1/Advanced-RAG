@@ -42,3 +42,18 @@ The first implementation stores dense vectors; sparse BM25 fusion is reserved
 for the retrieval phase. Docling preserves structured markdown and tables. When
 the installed Docling release does not expose stable page-level exports, the
 chunk provenance uses `page: null` rather than inventing a page number.
+
+## Minimal agent
+
+The MVP agent uses the measured Option A model split: Gemma 3 (`gemma3:4b`) for
+structured grading and Qwen (`qwen2.5:3b-instruct-q4_K_M`) for answer generation.
+Both calls use `keep_alive=0` so the models are swapped sequentially within the
+4 GB VRAM constraint.
+
+```powershell
+uv run python scripts/test_agent_cli.py "What does the document say about data engineering?"
+```
+
+The current graph is deliberately linear: vector retrieval, passage grading,
+then grounded generation. Rewriting, hallucination checking, and graph search
+are planned extensions.

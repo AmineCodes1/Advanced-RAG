@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from docling.document_converter import DocumentConverter
+if TYPE_CHECKING:
+    from docling.document_converter import DocumentConverter
 
 
 @dataclass(frozen=True)
@@ -17,7 +19,11 @@ class PdfParser:
     """Convert PDFs to structured markdown using Docling."""
 
     def __init__(self, converter: DocumentConverter | None = None) -> None:
-        self.converter = converter or DocumentConverter()
+        if converter is None:
+            from docling.document_converter import DocumentConverter as DoclingConverter
+
+            converter = DoclingConverter()
+        self.converter = converter
 
     def parse(self, filepath: str | Path) -> list[ParsedPage]:
         path = Path(filepath)
