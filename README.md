@@ -29,7 +29,7 @@ https://docs.astral.sh/uv/getting-started/installation/.
 `uv` is not installed on the current machine yet, so install it before running
 the backend. npm is used for the Next.js workspace.
 
-## Prompt 0: run the scaffold
+## Run locally
 
 Create the Neo4j environment file once:
 
@@ -63,7 +63,7 @@ and displays its status.
 
 ## Current scope
 
-This increment intentionally contains only the runnable scaffold and the
-`GET /health` endpoint. Ingestion, retrieval, LangGraph nodes, streaming chat,
-and UI workflows are implemented in later prompts and should be validated one
-phase at a time.
+The project currently includes the FastAPI health endpoint, PDF ingestion with
+embedded Qdrant, the minimal retrieval/grading/generation agent, and the Next.js
+status screen. Streaming chat, self-correction loops, graph retrieval, and
+observability remain on the roadmap.
