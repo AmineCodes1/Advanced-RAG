@@ -6,6 +6,10 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from app.chat import chat_stream
 
 app = FastAPI(title="GraphRAG Engine", version="0.1.0")
 
@@ -18,9 +22,29 @@ app.add_middleware(
 )
 
 
+class ChatRequest(BaseModel):
+    question: str
+    conversation_id: str | None = None
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post(
+    "/chat",
+    responses={400: {"description": "The question is empty"}},
+)
+async def chat(request: ChatRequest) -> StreamingResponse:
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question must not be empty")
+    return StreamingResponse(
+        chat_stream(question, request.conversation_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
 @app.post(

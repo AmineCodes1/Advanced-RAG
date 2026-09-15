@@ -57,3 +57,18 @@ uv run python scripts/test_agent_cli.py "What does the document say about data e
 The current graph is deliberately linear: vector retrieval, passage grading,
 then grounded generation. Rewriting, hallucination checking, and graph search
 are planned extensions.
+
+## Chat streaming
+
+`POST /chat` returns Server-Sent Events. It emits `status` events for retrieval,
+grading, and generation, `token` events as the answer is generated, then a
+`done` event containing the conversation ID and source metadata.
+
+```powershell
+curl.exe -N -X POST http://localhost:8000/chat `
+	-H "Content-Type: application/json" `
+	-d '{"question":"What does the document say about data engineering?"}'
+```
+
+Requests have a 45-second global timeout. Ollama, Qdrant, and model failures
+are converted into an SSE `error` event rather than an unhandled stream crash.
