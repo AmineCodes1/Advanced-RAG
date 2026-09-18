@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -12,8 +13,7 @@ def test_chat_rejects_empty_question() -> None:
     assert response.status_code == 400
 
 
-@pytest.mark.anyio
-async def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_stream(question: str, passages: list[dict]):
         yield "hello"
         yield " world"
@@ -28,7 +28,7 @@ async def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.Monke
     monkeypatch.setattr(chat_module, "retrieve_node", fake_retrieve)
     monkeypatch.setattr(chat_module, "grade_node", fake_grade)
     monkeypatch.setattr(chat_module, "stream_answer", fake_stream)
-    events = [event async for event in chat_module.chat_events("question", "conversation")]
+    events = asyncio.run(_collect_events())
 
     assert [event.splitlines()[0] for event in events] == [
         "event: status",
@@ -41,3 +41,7 @@ async def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.Monke
     done_payload = json.loads(events[-1].split("data: ", 1)[1])
     assert done_payload["conversation_id"] == "conversation"
     assert done_payload["sources"][0]["source_file"] == "a.pdf"
+
+
+async def _collect_events() -> list[str]:
+    return [event async for event in chat_module.chat_events("question", "conversation")]

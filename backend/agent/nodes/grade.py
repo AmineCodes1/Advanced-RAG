@@ -12,17 +12,35 @@ JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gemma3:4b")
 
 
 def _parse_grade(raw: str) -> dict[str, Any]:
-    value = json.loads(raw)
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:].lstrip()
+    value = json.loads(text)
     if not isinstance(value, dict):
         raise ValueError("grader response is not an object")
-    if not isinstance(value.get("relevant"), bool):
+
+    relevant = value.get("relevant")
+    if isinstance(relevant, str):
+        normalized = relevant.strip().lower()
+        if normalized in {"true", "false"}:
+            relevant = normalized == "true"
+    if isinstance(relevant, int) and relevant in {0, 1}:
+        relevant = bool(relevant)
+    if not isinstance(relevant, bool):
         raise ValueError("relevant must be boolean")
+
     score = value.get("score")
-    if not isinstance(score, (int, float)) or not 0 <= score <= 1:
+    if isinstance(score, str):
+        score = float(score.strip())
+    if not isinstance(score, (int, float)) or not 0 <= float(score) <= 1:
         raise ValueError("score must be between 0 and 1")
-    if not isinstance(value.get("reasoning"), str):
-        raise ValueError("reasoning must be a string")
-    return {"relevant": value["relevant"], "score": float(score), "reasoning": value["reasoning"]}
+
+    reasoning = value.get("reasoning")
+    if not isinstance(reasoning, str):
+        reasoning = str(reasoning)
+    return {"relevant": relevant, "score": float(score), "reasoning": reasoning}
 
 
 def grade_passage(client: ollama.Client, question: str, passage: dict[str, Any], retries: int = 2) -> dict[str, Any]:
@@ -59,7 +77,11 @@ def grade_node(state: dict[str, Any]) -> dict[str, Any]:
             grade = grade_passage(client, state["question"], passage)
         except ValueError:
             failures += 1
-            grade = {"relevant": False, "score": 0.0, "reasoning": "Grading failed"}
+            grade = {
+                "relevant": True,
+                "score": float(passage.get("score", 0.0)),
+                "reasoning": "Grading failed; retained the retrieved passage.",
+            }
         graded.append({**passage, **grade})
     metadata = dict(state.get("metadata", {}))
     metadata["grading_failures"] = failures
