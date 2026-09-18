@@ -8,4 +8,6 @@ class AgentState(TypedDict, total=False):
     retrieved_passages: list[dict[str, Any]]
     graded_passages: list[dict[str, Any]]
     answer: str
+    rewrite_count: int
+    quality_warning: bool
     metadata: dict[str, Any]

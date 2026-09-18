@@ -41,4 +41,10 @@ def stream_answer(
 def generate_node(state: dict[str, Any]) -> dict[str, Any]:
     passages = [passage for passage in state.get("graded_passages", []) if passage.get("relevant")]
     answer = "".join(stream_answer(state["question"], passages))
-    return {"answer": answer}
+    average_score = 0.0
+    if passages:
+        average_score = sum(float(passage.get("score", 0.0)) for passage in passages) / len(passages)
+    quality_warning = bool(state.get("quality_warning")) or (int(state.get("rewrite_count", 0) or 0) >= 2 and average_score < float(os.getenv("RELEVANCE_THRESHOLD", "0.5")))
+    metadata = dict(state.get("metadata", {}))
+    metadata["quality_warning"] = quality_warning
+    return {"answer": answer, "quality_warning": quality_warning, "metadata": metadata}

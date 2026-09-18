@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import queue
 import time
 import uuid
@@ -10,6 +11,7 @@ from typing import Any
 
 from agent.nodes.generate import stream_answer
 from agent.nodes.grade import grade_node
+from agent.nodes.rewrite import rewrite_node
 from agent.nodes.retrieve import retrieve_node
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
@@ -107,12 +109,25 @@ async def chat_events(
         yield sse_event("status", {"node": "grade"})
         await _run_node(grade_node, state, started, timeout_seconds)
 
+        threshold = float(os.getenv("RELEVANCE_THRESHOLD", "0.5"))
+        rewrite_count = int(state.get("rewrite_count", 0) or 0)
+        average_score = 0.0
+        while True:
+            graded = state.get("graded_passages", []) or []
+            relevant_scores = [float(passage.get("score", 0.0)) for passage in graded if passage.get("relevant")]
+            average_score = sum(relevant_scores) / len(relevant_scores) if relevant_scores else 0.0
+            rewrite_count = int(state.get("rewrite_count", 0) or 0)
+            if average_score < threshold and rewrite_count < 2:
+                yield sse_event("status", {"node": "rewrite", "question": state.get("question", question)})
+                await _run_node(rewrite_node, state, started, timeout_seconds)
+                continue
+            break
+
         yield sse_event("status", {"node": "generate"})
+        current_question = str(state.get("question", question)).strip() or question
         passages = [passage for passage in state.get("graded_passages", []) if passage.get("relevant")]
         answer_parts: list[str] = []
-        async for token in _stream_generated_tokens(
-            stream_answer(question, passages), started, timeout_seconds
-        ):
+        async for token in _stream_generated_tokens(stream_answer(current_question, passages), started, timeout_seconds):
             answer_parts.append(token)
             yield sse_event("token", {"text": token})
         yield sse_event(
@@ -121,6 +136,7 @@ async def chat_events(
                 "conversation_id": conversation_id,
                 "sources": _sources(passages),
                 "answer": "".join(answer_parts),
+                "quality_warning": bool(state.get("quality_warning")) or (rewrite_count >= 2 and average_score < threshold),
             },
         )
     except TimeoutError:
