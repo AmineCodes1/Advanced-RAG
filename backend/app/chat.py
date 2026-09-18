@@ -12,7 +12,7 @@ from agent.nodes.generate import stream_answer
 from agent.nodes.grade import grade_node
 from agent.nodes.retrieve import retrieve_node
 
-DEFAULT_TIMEOUT_SECONDS = 45.0
+DEFAULT_TIMEOUT_SECONDS = 120.0
 
 
 def sse_event(event: str, payload: dict[str, Any]) -> str:

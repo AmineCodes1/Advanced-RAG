@@ -20,6 +20,6 @@ class VectorRetriever:
 
 
 def retrieve_node(state: dict[str, Any]) -> dict[str, Any]:
-    limit = int(os.getenv("RETRIEVAL_LIMIT", "50"))
+    limit = int(os.getenv("RETRIEVAL_LIMIT", "1"))
     passages = VectorRetriever().retrieve(state["question"], limit=limit)
     return {"retrieved_passages": passages}

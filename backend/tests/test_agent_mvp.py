@@ -11,6 +11,11 @@ def test_grade_parser_accepts_expected_contract() -> None:
     assert result == {"relevant": True, "score": 0.8, "reasoning": "supported"}
 
 
+def test_grade_parser_accepts_string_booleans_and_scores() -> None:
+    result = _parse_grade('{"relevant": "true", "score": "0.8", "reasoning": "supported"}')
+    assert result == {"relevant": True, "score": 0.8, "reasoning": "supported"}
+
+
 def test_grade_parser_rejects_invalid_score() -> None:
     try:
         _parse_grade('{"relevant": true, "score": 2, "reasoning": "bad"}')
