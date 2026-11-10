@@ -21,6 +21,8 @@ def main() -> int:
             f"{index}. relevant={passage.get('relevant')} "
             f"score={passage.get('score', 0):.2f} reasoning={passage.get('reasoning')}"
         )
+    if result.get("rewrite_count"):
+        print(f"\nRewrite loop count: {result.get('rewrite_count')}\nRewritten question: {result.get('question')}")
     print("\nAnswer:\n" + result.get("answer", ""))
     print("\nMetadata:\n" + json.dumps(result.get("metadata", {}), indent=2))
     return 0

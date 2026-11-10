@@ -14,7 +14,7 @@ def test_chat_rejects_empty_question() -> None:
 
 
 def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_stream(question: str, passages: list[dict]):
+    def fake_stream(question: str, passages: list[dict], instruction: str | None = None):
         yield "hello"
         yield " world"
 
@@ -25,9 +25,17 @@ def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.MonkeyPatch
         passage = {**state["retrieved_passages"][0], "relevant": True, "score": 1.0}
         return {"graded_passages": [passage]}
 
+    def fake_hallucination_check(state: dict) -> dict:
+        return {
+            "hallucination_supported": True,
+            "hallucination_warning": False,
+            "unsupported_claims": [],
+        }
+
     monkeypatch.setattr(chat_module, "retrieve_node", fake_retrieve)
     monkeypatch.setattr(chat_module, "grade_node", fake_grade)
     monkeypatch.setattr(chat_module, "stream_answer", fake_stream)
+    monkeypatch.setattr(chat_module, "hallucination_check_node", fake_hallucination_check)
     events = asyncio.run(_collect_events())
 
     assert [event.splitlines()[0] for event in events] == [
@@ -36,11 +44,46 @@ def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.MonkeyPatch
         "event: status",
         "event: token",
         "event: token",
+        "event: status",
         "event: done",
     ]
     done_payload = json.loads(events[-1].split("data: ", 1)[1])
     assert done_payload["conversation_id"] == "conversation"
     assert done_payload["sources"][0]["source_file"] == "a.pdf"
+    assert done_payload["hallucination_warning"] is False
+
+
+def test_chat_emits_hallucination_warning_after_one_regeneration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def fake_stream(question: str, passages: list[dict], instruction: str | None = None):
+        nonlocal attempts
+        attempts += 1
+        yield f"answer-{attempts}"
+
+    def fake_hallucination_check(state: dict) -> dict:
+        return {
+            "hallucination_supported": False,
+            "hallucination_warning": True,
+            "unsupported_claims": ["unsupported claim"],
+        }
+
+    monkeypatch.setattr(chat_module, "retrieve_node", lambda state: {
+        "retrieved_passages": [{"text": "grounded", "relevant": True, "score": 1.0}]
+    })
+    monkeypatch.setattr(chat_module, "grade_node", lambda state: {
+        "graded_passages": [{**state["retrieved_passages"][0], "relevant": True, "score": 1.0}]
+    })
+    monkeypatch.setattr(chat_module, "stream_answer", fake_stream)
+    monkeypatch.setattr(chat_module, "hallucination_check_node", fake_hallucination_check)
+    events = asyncio.run(_collect_events())
+    done_payload = json.loads(events[-1].split("data: ", 1)[1])
+
+    assert attempts == 2
+    assert done_payload["hallucination_warning"] is True
+    assert done_payload["unsupported_claims"] == ["unsupported claim"]
 
 
 async def _collect_events() -> list[str]:

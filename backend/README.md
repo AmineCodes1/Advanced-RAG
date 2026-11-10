@@ -54,15 +54,16 @@ Both calls use `keep_alive=0` so the models are swapped sequentially within the
 uv run python scripts/test_agent_cli.py "What does the document say about data engineering?"
 ```
 
-The current graph is deliberately linear: vector retrieval, passage grading,
-then grounded generation. Rewriting, hallucination checking, and graph search
-are planned extensions.
+The graph performs vector retrieval, passage grading, conditional query
+rewriting, grounded generation, and a single hallucination-check/regeneration
+cycle. Rewrite and regeneration counters prevent unbounded loops.
 
 ## Chat streaming
 
 `POST /chat` returns Server-Sent Events. It emits `status` events for retrieval,
-grading, and generation, `token` events as the answer is generated, then a
-`done` event containing the conversation ID and source metadata.
+grading, optional rewriting, generation, and hallucination checking, `token`
+events as the answer is generated, then a `done` event containing the
+conversation ID, source metadata, and any quality or hallucination warnings.
 
 ```powershell
 curl.exe -N -X POST http://localhost:8000/chat `
@@ -70,5 +71,6 @@ curl.exe -N -X POST http://localhost:8000/chat `
 	-d '{"question":"What does the document say about data engineering?"}'
 ```
 
-Requests have a 45-second global timeout. Ollama, Qdrant, and model failures
-are converted into an SSE `error` event rather than an unhandled stream crash.
+Requests have a 120-second global timeout to accommodate sequential local model
+swaps. Ollama, Qdrant, and model failures are converted into an SSE `error`
+event rather than an unhandled stream crash.
