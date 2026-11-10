@@ -12,6 +12,10 @@ def main() -> int:
     args = parser.parse_args()
     question = " ".join(args.question)
     result = agent_graph.invoke({"question": question, "metadata": {}})
+    print(
+        f"\nRoute: {result.get('route', 'unknown')} "
+        f"(confidence={result.get('route_confidence', 0):.2f})"
+    )
     print("\nRetrieved passages:")
     for index, passage in enumerate(result.get("retrieved_passages", []), 1):
         print(f"{index}. score={passage.get('score', 0):.4f} source={passage.get('source_file')}")

@@ -1,11 +1,12 @@
 from agent.graph import _should_rewrite, agent_graph
 from agent.nodes.grade import _parse_grade
 from agent.nodes.hallucination_check import _parse_check, prepare_regeneration_node
+from agent.nodes.router import _parse_route
 from agent.nodes.rewrite import rewrite_node
 
 
 def test_graph_contains_mvp_nodes() -> None:
-    assert {"retrieve", "grade", "rewrite", "generate"}.issubset(agent_graph.nodes)
+    assert {"retrieve_vector", "grade", "rewrite", "generate"}.issubset(agent_graph.nodes)
 
 
 def test_grade_parser_accepts_expected_contract() -> None:
@@ -58,3 +59,14 @@ def test_hallucination_guard_allows_one_regeneration() -> None:
     )
     assert first["regenerate_count"] == 1
     assert "claim" in first["regeneration_instruction"]
+
+
+def test_router_parser_accepts_valid_route() -> None:
+    assert _parse_route('{"route": "hybrid", "confidence": "0.9"}') == {
+        "route": "hybrid",
+        "confidence": 0.9,
+    }
+
+
+def test_graph_contains_multi_source_nodes() -> None:
+    assert {"router", "retrieve_vector", "retrieve_graph", "retrieve_hybrid"}.issubset(agent_graph.nodes)

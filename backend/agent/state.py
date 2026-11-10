@@ -15,4 +15,7 @@ class AgentState(TypedDict, total=False):
     hallucination_supported: bool
     hallucination_warning: bool
     unsupported_claims: list[str]
+    route: str
+    route_confidence: float
+    history: list[dict[str, str]]
     metadata: dict[str, Any]

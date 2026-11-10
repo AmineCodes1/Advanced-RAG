@@ -19,7 +19,10 @@ class VectorRetriever:
         return self.store.search(list(query_vector), limit=limit)
 
 
-def retrieve_node(state: dict[str, Any]) -> dict[str, Any]:
+def retrieve_vector_node(state: dict[str, Any]) -> dict[str, Any]:
     limit = int(os.getenv("RETRIEVAL_LIMIT", "1"))
     passages = VectorRetriever().retrieve(state["question"], limit=limit)
     return {"retrieved_passages": passages}
+
+
+retrieve_node = retrieve_vector_node

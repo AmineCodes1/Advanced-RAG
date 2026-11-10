@@ -54,16 +54,23 @@ Both calls use `keep_alive=0` so the models are swapped sequentially within the
 uv run python scripts/test_agent_cli.py "What does the document say about data engineering?"
 ```
 
-The graph performs vector retrieval, passage grading, conditional query
-rewriting, grounded generation, and a single hallucination-check/regeneration
-cycle. Rewrite and regeneration counters prevent unbounded loops.
+The graph routes each question to vector, graph, or hybrid retrieval, then
+performs passage grading, conditional query rewriting, grounded generation,
+and a single hallucination-check/regeneration cycle. Rewrite and regeneration
+counters prevent unbounded loops. Graph retrieval requires Neo4j credentials
+through `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD`.
 
 ## Chat streaming
 
-`POST /chat` returns Server-Sent Events. It emits `status` events for retrieval,
-grading, optional rewriting, generation, and hallucination checking, `token`
-events as the answer is generated, then a `done` event containing the
-conversation ID, source metadata, and any quality or hallucination warnings.
+`POST /chat` returns Server-Sent Events. It emits `status` events for routing,
+the selected retrieval source, grading, optional rewriting, generation, and
+hallucination checking, `token` events as the answer is generated, then a
+`done` event containing the conversation ID, source metadata, and any quality
+or hallucination warnings.
+
+The router can be tuned with `RETRIEVAL_LIMIT`, `GRAPH_RETRIEVAL_LIMIT`,
+`GENERATION_VECTOR_LIMIT`, and `GENERATION_GRAPH_LIMIT`. The default context
+cap is five vector passages plus ten graph triplets.
 
 ```powershell
 curl.exe -N -X POST http://localhost:8000/chat `
