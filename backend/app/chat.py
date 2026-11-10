@@ -14,6 +14,9 @@ from agent.nodes.grade import grade_node
 from agent.nodes.hallucination_check import hallucination_check_node, prepare_regeneration_node
 from agent.nodes.rewrite import rewrite_node
 from agent.nodes.retrieve import retrieve_node
+from agent.nodes.retrieve_graph import retrieve_graph_node
+from agent.nodes.retrieve_hybrid import retrieve_hybrid_node
+from agent.nodes.router import router_node
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
 
@@ -94,6 +97,14 @@ def _sources(passages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _generation_passages(passages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    vector_limit = int(os.getenv("GENERATION_VECTOR_LIMIT", "5"))
+    graph_limit = int(os.getenv("GENERATION_GRAPH_LIMIT", "10"))
+    vector_passages = [passage for passage in passages if passage.get("source_type") != "graph"][:vector_limit]
+    graph_passages = [passage for passage in passages if passage.get("source_type") == "graph"][:graph_limit]
+    return vector_passages + graph_passages
+
+
 async def chat_events(
     question: str,
     conversation_id: str | None = None,
@@ -104,8 +115,16 @@ async def chat_events(
     state: dict[str, Any] = {"question": question, "metadata": {}}
 
     try:
-        yield sse_event("status", {"node": "retrieve"})
-        await _run_node(retrieve_node, state, started, timeout_seconds)
+        yield sse_event("status", {"node": "router"})
+        await _run_node(router_node, state, started, timeout_seconds)
+        route = state.get("route", "vector")
+        retrieval_node = {
+            "vector": retrieve_node,
+            "graph": retrieve_graph_node,
+            "hybrid": retrieve_hybrid_node,
+        }.get(route, retrieve_node)
+        yield sse_event("status", {"node": f"retrieve_{route}", "route": route})
+        await _run_node(retrieval_node, state, started, timeout_seconds)
 
         yield sse_event("status", {"node": "grade"})
         await _run_node(grade_node, state, started, timeout_seconds)
@@ -125,7 +144,9 @@ async def chat_events(
             break
 
         current_question = str(state.get("question", question)).strip() or question
-        passages = [passage for passage in state.get("graded_passages", []) if passage.get("relevant")]
+        passages = _generation_passages(
+            [passage for passage in state.get("graded_passages", []) if passage.get("relevant")]
+        )
         answer_parts: list[str] = []
         for generation_attempt in range(2):
             yield sse_event("status", {"node": "generate"})

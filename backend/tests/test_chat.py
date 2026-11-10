@@ -33,12 +33,14 @@ def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.MonkeyPatch
         }
 
     monkeypatch.setattr(chat_module, "retrieve_node", fake_retrieve)
+    monkeypatch.setattr(chat_module, "router_node", lambda state: {"route": "vector", "route_confidence": 1.0})
     monkeypatch.setattr(chat_module, "grade_node", fake_grade)
     monkeypatch.setattr(chat_module, "stream_answer", fake_stream)
     monkeypatch.setattr(chat_module, "hallucination_check_node", fake_hallucination_check)
     events = asyncio.run(_collect_events())
 
     assert [event.splitlines()[0] for event in events] == [
+        "event: status",
         "event: status",
         "event: status",
         "event: status",
@@ -73,6 +75,7 @@ def test_chat_emits_hallucination_warning_after_one_regeneration(
     monkeypatch.setattr(chat_module, "retrieve_node", lambda state: {
         "retrieved_passages": [{"text": "grounded", "relevant": True, "score": 1.0}]
     })
+    monkeypatch.setattr(chat_module, "router_node", lambda state: {"route": "vector", "route_confidence": 1.0})
     monkeypatch.setattr(chat_module, "grade_node", lambda state: {
         "graded_passages": [{**state["retrieved_passages"][0], "relevant": True, "score": 1.0}]
     })

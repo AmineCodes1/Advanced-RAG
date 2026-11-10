@@ -11,7 +11,10 @@ from agent.nodes.hallucination_check import (
     prepare_regeneration_node,
 )
 from agent.nodes.rewrite import rewrite_node
-from agent.nodes.retrieve import retrieve_node
+from agent.nodes.retrieve import retrieve_vector_node
+from agent.nodes.retrieve_graph import retrieve_graph_node
+from agent.nodes.retrieve_hybrid import retrieve_hybrid_node
+from agent.nodes.router import router_node
 from agent.state import AgentState
 
 
@@ -34,16 +37,26 @@ def _should_rewrite(state: dict[str, object]) -> str:
 
 def build_graph():
     graph = StateGraph(AgentState)
-    graph.add_node("retrieve", retrieve_node)
+    graph.add_node("router", router_node)
+    graph.add_node("retrieve_vector", retrieve_vector_node)
+    graph.add_node("retrieve_graph", retrieve_graph_node)
+    graph.add_node("retrieve_hybrid", retrieve_hybrid_node)
     graph.add_node("grade", grade_node)
     graph.add_node("rewrite", rewrite_node)
     graph.add_node("generate", generate_node)
     graph.add_node("hallucination_check", hallucination_check_node)
     graph.add_node("prepare_regeneration", prepare_regeneration_node)
-    graph.add_edge(START, "retrieve")
-    graph.add_edge("retrieve", "grade")
+    graph.add_edge(START, "router")
+    graph.add_conditional_edges(
+        "router",
+        lambda state: state.get("route", "vector"),
+        {"vector": "retrieve_vector", "graph": "retrieve_graph", "hybrid": "retrieve_hybrid"},
+    )
+    graph.add_edge("retrieve_vector", "grade")
+    graph.add_edge("retrieve_graph", "grade")
+    graph.add_edge("retrieve_hybrid", "grade")
     graph.add_conditional_edges("grade", _should_rewrite, {"rewrite": "rewrite", "generate": "generate"})
-    graph.add_edge("rewrite", "retrieve")
+    graph.add_edge("rewrite", "router")
     graph.add_edge("generate", "hallucination_check")
     graph.add_conditional_edges(
         "hallucination_check",

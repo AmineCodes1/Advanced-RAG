@@ -49,7 +49,12 @@ def stream_answer(
 
 
 def generate_node(state: dict[str, Any]) -> dict[str, Any]:
-    passages = [passage for passage in state.get("graded_passages", []) if passage.get("relevant")]
+    relevant = [passage for passage in state.get("graded_passages", []) if passage.get("relevant")]
+    vector_limit = int(os.getenv("GENERATION_VECTOR_LIMIT", "5"))
+    graph_limit = int(os.getenv("GENERATION_GRAPH_LIMIT", "10"))
+    vector_passages = [passage for passage in relevant if passage.get("source_type") != "graph"][:vector_limit]
+    graph_passages = [passage for passage in relevant if passage.get("source_type") == "graph"][:graph_limit]
+    passages = vector_passages + graph_passages
     answer = "".join(
         stream_answer(
             state["question"],
