@@ -26,8 +26,7 @@ simple.
 based tool for reproducible Python environments; install it from
 https://docs.astral.sh/uv/getting-started/installation/.
 
-`uv` is not installed on the current machine yet, so install it before running
-the backend. npm is used for the Next.js workspace.
+npm is used for the Next.js workspace.
 
 ## Run locally
 
@@ -58,12 +57,11 @@ cd frontend
 npm run dev
 ```
 
-Open http://localhost:3000. The initial page checks the backend health endpoint
-and displays its status.
+Open http://localhost:3000 to use Chat Studio.
 
 ## Current scope
 
-The project currently includes the FastAPI health endpoint, PDF ingestion with
-embedded Qdrant, the minimal retrieval/grading/generation agent, and the Next.js
-status screen. Streaming chat, self-correction loops, graph retrieval, and
-observability remain on the roadmap.
+The project currently includes PDF ingestion with embedded Qdrant, a
+self-correcting retrieval and generation agent, streaming chat over SSE, and
+the Chat Studio interface. Graph retrieval and observability remain on the
+roadmap.

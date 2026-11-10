@@ -10,4 +10,9 @@ class AgentState(TypedDict, total=False):
     answer: str
     rewrite_count: int
     quality_warning: bool
+    regenerate_count: int
+    regeneration_instruction: str
+    hallucination_supported: bool
+    hallucination_warning: bool
+    unsupported_claims: list[str]
     metadata: dict[str, Any]

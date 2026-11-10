@@ -13,6 +13,15 @@ def _prompt(question: str, passages: list[dict[str, Any]]) -> str:
     context = "\n\n".join(
         f"[Source {index}] {passage.get('text', '')}" for index, passage in enumerate(passages, 1)
     )
+
+
+def _prompt_with_instruction(
+    question: str,
+    passages: list[dict[str, Any]],
+    instruction: str | None,
+) -> str:
+    prompt = _prompt(question, passages)
+    return f"{prompt}\n\nAdditional instruction:\n{instruction}" if instruction else prompt
     return (
         "Answer the question using only the supplied sources. If the sources do "
         "not contain the answer, say that clearly. Cite sources as [Source N].\n\n"
@@ -24,10 +33,11 @@ def stream_answer(
     question: str,
     passages: list[dict[str, Any]],
     client: ollama.Client | None = None,
+    instruction: str | None = None,
 ) -> Iterator[str]:
     response = (client or ollama.Client()).generate(
         model=GENERATION_MODEL,
-        prompt=_prompt(question, passages),
+        prompt=_prompt_with_instruction(question, passages, instruction),
         stream=True,
         options={"temperature": 0.2},
         keep_alive=0,
@@ -40,7 +50,13 @@ def stream_answer(
 
 def generate_node(state: dict[str, Any]) -> dict[str, Any]:
     passages = [passage for passage in state.get("graded_passages", []) if passage.get("relevant")]
-    answer = "".join(stream_answer(state["question"], passages))
+    answer = "".join(
+        stream_answer(
+            state["question"],
+            passages,
+            instruction=state.get("regeneration_instruction"),
+        )
+    )
     average_score = 0.0
     if passages:
         average_score = sum(float(passage.get("score", 0.0)) for passage in passages) / len(passages)

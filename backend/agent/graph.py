@@ -6,6 +6,10 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.nodes.generate import generate_node
 from agent.nodes.grade import grade_node
+from agent.nodes.hallucination_check import (
+    hallucination_check_node,
+    prepare_regeneration_node,
+)
 from agent.nodes.rewrite import rewrite_node
 from agent.nodes.retrieve import retrieve_node
 from agent.state import AgentState
@@ -34,11 +38,24 @@ def build_graph():
     graph.add_node("grade", grade_node)
     graph.add_node("rewrite", rewrite_node)
     graph.add_node("generate", generate_node)
+    graph.add_node("hallucination_check", hallucination_check_node)
+    graph.add_node("prepare_regeneration", prepare_regeneration_node)
     graph.add_edge(START, "retrieve")
     graph.add_edge("retrieve", "grade")
     graph.add_conditional_edges("grade", _should_rewrite, {"rewrite": "rewrite", "generate": "generate"})
     graph.add_edge("rewrite", "retrieve")
-    graph.add_edge("generate", END)
+    graph.add_edge("generate", "hallucination_check")
+    graph.add_conditional_edges(
+        "hallucination_check",
+        lambda state: (
+            "prepare_regeneration"
+            if not state.get("hallucination_supported", False)
+            and int(state.get("regenerate_count", 0) or 0) < 1
+            else "end"
+        ),
+        {"prepare_regeneration": "prepare_regeneration", "end": END},
+    )
+    graph.add_edge("prepare_regeneration", "generate")
     return graph.compile()
 
 

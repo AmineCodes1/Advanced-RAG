@@ -7,7 +7,13 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
 type Source = { source_file?: string; page?: number | null; score?: number };
-type Message = { role: "user" | "assistant"; content: string; sources?: Source[]; warning?: string };
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  sources?: Source[];
+  warning?: string;
+  unsupportedClaims?: string[];
+};
 
 type SsePayload = Record<string, unknown>;
 
@@ -71,7 +77,19 @@ export default function ChatStudio() {
           if (parsed.event === "done") {
             assistantSources = Array.isArray(parsed.data.sources) ? parsed.data.sources as Source[] : [];
             const warning = parsed.data.timeout ? "The response timed out before completion." : undefined;
-            setMessages((current) => current.map((message, index) => index === current.length - 1 ? { ...message, content: assistantContent || "No answer was generated.", sources: assistantSources, warning } : message));
+            const unsupportedClaims = Array.isArray(parsed.data.unsupported_claims)
+              ? parsed.data.unsupported_claims.filter((claim): claim is string => typeof claim === "string")
+              : [];
+            const hallucinationWarning = parsed.data.hallucination_warning
+              ? "Some parts of this answer are not clearly confirmed by the sources."
+              : warning;
+            setMessages((current) => current.map((message, index) => index === current.length - 1 ? {
+              ...message,
+              content: assistantContent || "No answer was generated.",
+              sources: assistantSources,
+              warning: hallucinationWarning,
+              unsupportedClaims,
+            } : message));
           }
           if (parsed.event === "error") throw new Error(String(parsed.data.message ?? "The request failed."));
         }
@@ -96,7 +114,7 @@ export default function ChatStudio() {
         </header>
         <section className="flex-1 space-y-6 overflow-y-auto px-6 py-8 sm:px-24 sm:py-12">
           {messages.length === 0 && <div className="mx-auto max-w-2xl py-16"><p className="font-[family-name:var(--font-geist-mono)] text-sm uppercase tracking-[0.2em] text-[#c56b3d]">Ask your library</p><h2 className="mt-4 text-4xl font-semibold leading-tight text-[#17352f] sm:text-6xl">Find the thread between your documents.</h2><p className="mt-5 max-w-lg text-[#416058]">Ask a question and watch the local retrieval pipeline ground its answer in your sources.</p></div>}
-          {messages.map((message, index) => <article key={`${message.role}-${index}`} className={message.role === "user" ? "ml-auto max-w-xl" : "max-w-3xl"}><p className="mb-2 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#c56b3d]">{message.role === "user" ? "You" : "Assistant"}</p><div className={message.role === "user" ? "rounded-2xl rounded-tr-sm bg-[#17483b] px-5 py-4 text-white" : "text-[#17352f]"}><div className="prose prose-sm max-w-none prose-headings:text-[#17352f] prose-a:text-[#c56b3d] prose-pre:bg-[#17352f]"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{message.content || (isStreaming && index === messages.length - 1 ? "..." : "")}</ReactMarkdown></div>{message.warning && <p className="mt-4 border-l-2 border-[#c56b3d] pl-3 text-sm text-[#8d4b2c]">{message.warning}</p>}{message.sources && message.sources.length > 0 && <div className="mt-5 flex flex-wrap gap-2">{message.sources.map((source, sourceIndex) => <span key={`${source.source_file}-${sourceIndex}`} className="rounded-full border border-[#17483b]/15 px-3 py-1 text-xs text-[#416058]">{source.source_file ?? "Source"}{source.page ? ` · p. ${source.page}` : ""}</span>)}</div>}</div></article>)}
+          {messages.map((message, index) => <article key={`${message.role}-${index}`} className={message.role === "user" ? "ml-auto max-w-xl" : "max-w-3xl"}><p className="mb-2 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#c56b3d]">{message.role === "user" ? "You" : "Assistant"}</p><div className={message.role === "user" ? "rounded-2xl rounded-tr-sm bg-[#17483b] px-5 py-4 text-white" : "text-[#17352f]"}><div className="prose prose-sm max-w-none prose-headings:text-[#17352f] prose-a:text-[#c56b3d] prose-pre:bg-[#17352f]"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{message.content || (isStreaming && index === messages.length - 1 ? "..." : "")}</ReactMarkdown></div>{message.warning && <p className="mt-4 border-l-2 border-[#c56b3d] pl-3 text-sm text-[#8d4b2c]">{message.warning}</p>}{message.unsupportedClaims && message.unsupportedClaims.length > 0 && <details className="mt-2 text-sm text-[#8d4b2c]"><summary className="cursor-pointer">View claims needing verification</summary><ul className="mt-2 list-disc pl-5">{message.unsupportedClaims.map((claim, claimIndex) => <li key={`${claim}-${claimIndex}`}>{claim}</li>)}</ul></details>}{message.sources && message.sources.length > 0 && <div className="mt-5 flex flex-wrap gap-2">{message.sources.map((source, sourceIndex) => <span key={`${source.source_file}-${sourceIndex}`} className="rounded-full border border-[#17483b]/15 px-3 py-1 text-xs text-[#416058]">{source.source_file ?? "Source"}{source.page ? ` · p. ${source.page}` : ""}</span>)}</div>}</div></article>)}
         </section>
         <form onSubmit={sendQuestion} className="border-t border-[#17483b]/10 p-4 sm:p-6"><div className="flex items-end gap-3 rounded-2xl border border-[#17483b]/15 bg-white px-4 py-3 shadow-sm"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendQuestion(event); } }} placeholder="Ask about your documents..." rows={1} className="min-h-10 flex-1 resize-none bg-transparent py-2 text-sm text-[#17352f] outline-none placeholder:text-[#416058]/50" disabled={isStreaming} /><button type="submit" disabled={!question.trim() || isStreaming} aria-label="Send question" className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#c56b3d] text-white transition hover:bg-[#a8522d] disabled:cursor-not-allowed disabled:opacity-40">↑</button></div><p className="mt-2 px-1 text-[11px] text-[#416058]/70">Enter to send · Shift+Enter for a new line</p></form>
       </div>

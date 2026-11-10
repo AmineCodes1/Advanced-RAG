@@ -1,5 +1,6 @@
 from agent.graph import _should_rewrite, agent_graph
 from agent.nodes.grade import _parse_grade
+from agent.nodes.hallucination_check import _parse_check, prepare_regeneration_node
 from agent.nodes.rewrite import rewrite_node
 
 
@@ -45,3 +46,15 @@ def test_rewrite_guard_stops_after_two_iterations(monkeypatch) -> None:
 
     guarded_state = {**state, **rewritten}
     assert _should_rewrite(guarded_state) == "generate"
+
+
+def test_hallucination_guard_allows_one_regeneration() -> None:
+    assert _parse_check(
+        '{"supported": "false", "unsupported_claims": ["claim"]}'
+    ) == {"supported": False, "unsupported_claims": ["claim"]}
+
+    first = prepare_regeneration_node(
+        {"unsupported_claims": ["claim"], "regenerate_count": 0, "metadata": {}}
+    )
+    assert first["regenerate_count"] == 1
+    assert "claim" in first["regeneration_instruction"]
