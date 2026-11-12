@@ -13,6 +13,19 @@ def test_chat_rejects_empty_question() -> None:
     assert response.status_code == 400
 
 
+def test_agent_trace_websocket_is_scoped_to_conversation() -> None:
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/agent-trace?conversation_id=trace-test") as websocket:
+            asyncio.run(chat_module.trace_hub.publish("other-conversation", {"node": "router"}))
+            asyncio.run(chat_module.trace_hub.publish("trace-test", {
+                "node": "router",
+                "status": "active",
+                "timestamp": 1.0,
+                "duration_ms": None,
+            }))
+            assert websocket.receive_json()["node"] == "router"
+
+
 def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_stream(question: str, passages: list[dict], instruction: str | None = None):
         yield "hello"
@@ -53,6 +66,42 @@ def test_chat_events_emit_status_tokens_and_done(monkeypatch: pytest.MonkeyPatch
     assert done_payload["conversation_id"] == "conversation"
     assert done_payload["sources"][0]["source_file"] == "a.pdf"
     assert done_payload["hallucination_warning"] is False
+
+
+def test_chat_done_includes_graph_subgraph_for_graph_passages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(chat_module, "router_node", lambda state: {"route": "graph"})
+    monkeypatch.setattr(chat_module, "retrieve_graph_node", lambda state: {
+        "retrieved_passages": [{
+            "text": "Alice works_for Acme",
+            "subject": "Alice",
+            "relation": "works_for",
+            "object": "Acme",
+            "source_type": "graph",
+            "score": 1.0,
+        }]
+    })
+    monkeypatch.setattr(chat_module, "grade_node", lambda state: {
+        "graded_passages": [{**state["retrieved_passages"][0], "relevant": True, "score": 1.0}]
+    })
+    monkeypatch.setattr(chat_module, "stream_answer", lambda *args, **kwargs: iter(["answer"]))
+    monkeypatch.setattr(chat_module, "hallucination_check_node", lambda state: {
+        "hallucination_supported": True,
+        "hallucination_warning": False,
+        "unsupported_claims": [],
+    })
+
+    events = asyncio.run(_collect_events())
+    done_payload = json.loads(events[-1].split("data: ", 1)[1])
+
+    assert done_payload["graph"] == {
+        "nodes": [
+            {"id": "Alice", "label": "Alice", "type": "Entity"},
+            {"id": "Acme", "label": "Acme", "type": "Entity"},
+        ],
+        "edges": [{"source": "Alice", "target": "Acme", "relation": "works_for"}],
+    }
 
 
 def test_chat_emits_hallucination_warning_after_one_regeneration(

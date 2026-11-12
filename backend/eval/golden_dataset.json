@@ -1,0 +1,26 @@
+[
+  {
+    "id": "replace-001",
+    "question": "À REMPLACER — question factuelle sur un document réellement ingéré",
+    "reference": "À REMPLACER — réponse attendue vérifiable dans le document",
+    "reference_contexts": ["À REMPLACER — extrait source attendu"]
+  },
+  {
+    "id": "replace-002",
+    "question": "À REMPLACER — question nécessitant une relation entre deux entités",
+    "reference": "À REMPLACER — réponse attendue",
+    "reference_contexts": ["À REMPLACER — extrait source attendu"]
+  },
+  {
+    "id": "replace-003",
+    "question": "À REMPLACER — question de synthèse multi-passage",
+    "reference": "À REMPLACER — réponse attendue",
+    "reference_contexts": ["À REMPLACER — premier extrait", "À REMPLACER — second extrait"]
+  },
+  {
+    "id": "replace-004",
+    "question": "À REMPLACER — question dont la réponse doit signaler l'absence d'information",
+    "reference": "À REMPLACER — réponse attendue",
+    "reference_contexts": ["À REMPLACER — extrait source attendu"]
+  }
+]
