@@ -4,12 +4,13 @@ from pathlib import Path
 
 from typing import Annotated
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.chat import chat_stream
+from app.trace import trace_hub
 
 app = FastAPI(title="GraphRAG Engine", version="0.1.0")
 
@@ -30,6 +31,20 @@ class ChatRequest(BaseModel):
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.websocket("/ws/agent-trace")
+async def agent_trace(websocket: WebSocket) -> None:
+    conversation_id = websocket.query_params.get("conversation_id")
+    if not conversation_id:
+        await websocket.close(code=1008, reason="conversation_id is required")
+        return
+    await websocket.accept()
+    try:
+        async for event in trace_hub.events(conversation_id):
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        return
 
 
 @app.post(

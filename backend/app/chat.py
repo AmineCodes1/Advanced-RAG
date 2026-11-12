@@ -17,6 +17,8 @@ from agent.nodes.retrieve import retrieve_node
 from agent.nodes.retrieve_graph import retrieve_graph_node
 from agent.nodes.retrieve_hybrid import retrieve_hybrid_node
 from agent.nodes.router import router_node
+from app.trace import trace_event, trace_hub
+from app.observability import LangfuseRecorder
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
 
@@ -105,6 +107,26 @@ def _generation_passages(passages: list[dict[str, Any]]) -> list[dict[str, Any]]
     return vector_passages + graph_passages
 
 
+def _graph_subgraph(passages: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    graph_passages = [passage for passage in passages if passage.get("source_type") == "graph"]
+    nodes: dict[str, dict[str, str]] = {}
+    edges: list[dict[str, str]] = []
+    seen_edges: set[tuple[str, str, str]] = set()
+    for passage in graph_passages:
+        subject = str(passage.get("subject", "")).strip()
+        relation = str(passage.get("relation", "")).strip()
+        object_name = str(passage.get("object", "")).strip()
+        if not subject or not relation or not object_name:
+            continue
+        nodes.setdefault(subject, {"id": subject, "label": subject, "type": "Entity"})
+        nodes.setdefault(object_name, {"id": object_name, "label": object_name, "type": "Entity"})
+        edge_key = (subject, object_name, relation)
+        if edge_key not in seen_edges:
+            edges.append({"source": subject, "target": object_name, "relation": relation})
+            seen_edges.add(edge_key)
+    return {"nodes": list(nodes.values()), "edges": edges}
+
+
 async def chat_events(
     question: str,
     conversation_id: str | None = None,
@@ -113,21 +135,34 @@ async def chat_events(
     conversation_id = conversation_id or str(uuid.uuid4())
     started = time.monotonic()
     state: dict[str, Any] = {"question": question, "metadata": {}}
+    recorder = LangfuseRecorder(conversation_id, question)
 
     try:
-        yield sse_event("status", {"node": "router"})
-        await _run_node(router_node, state, started, timeout_seconds)
+        async def run_traced(node_name: str, node: Any) -> AsyncIterator[str]:
+            node_started = time.monotonic()
+            observation = recorder.start_node(node_name, state)
+            active = trace_event(node_name, "active")
+            await trace_hub.publish(conversation_id, active)
+            yield sse_event("status", {"node": node_name})
+            try:
+                await _run_node(node, state, started, timeout_seconds)
+            finally:
+                recorder.finish_node(observation, state)
+            await trace_hub.publish(conversation_id, trace_event(node_name, "completed", node_started))
+
+        async for event in run_traced("router", router_node):
+            yield event
         route = state.get("route", "vector")
         retrieval_node = {
             "vector": retrieve_node,
             "graph": retrieve_graph_node,
             "hybrid": retrieve_hybrid_node,
         }.get(route, retrieve_node)
-        yield sse_event("status", {"node": f"retrieve_{route}", "route": route})
-        await _run_node(retrieval_node, state, started, timeout_seconds)
+        async for event in run_traced(f"retrieve_{route}", retrieval_node):
+            yield event
 
-        yield sse_event("status", {"node": "grade"})
-        await _run_node(grade_node, state, started, timeout_seconds)
+        async for event in run_traced("grade", grade_node):
+            yield event
 
         threshold = float(os.getenv("RELEVANCE_THRESHOLD", "0.5"))
         rewrite_count = int(state.get("rewrite_count", 0) or 0)
@@ -138,8 +173,8 @@ async def chat_events(
             average_score = sum(relevant_scores) / len(relevant_scores) if relevant_scores else 0.0
             rewrite_count = int(state.get("rewrite_count", 0) or 0)
             if average_score < threshold and rewrite_count < 2:
-                yield sse_event("status", {"node": "rewrite", "question": state.get("question", question)})
-                await _run_node(rewrite_node, state, started, timeout_seconds)
+                async for event in run_traced("rewrite", rewrite_node):
+                    yield event
                 continue
             break
 
@@ -149,6 +184,9 @@ async def chat_events(
         )
         answer_parts: list[str] = []
         for generation_attempt in range(2):
+            node_started = time.monotonic()
+            generation_observation = recorder.start_node("generate", state)
+            await trace_hub.publish(conversation_id, trace_event("generate", "active"))
             yield sse_event("status", {"node": "generate"})
             answer_parts = []
             async for token in _stream_generated_tokens(
@@ -163,11 +201,15 @@ async def chat_events(
                 answer_parts.append(token)
                 yield sse_event("token", {"text": token})
             state["answer"] = "".join(answer_parts)
-            yield sse_event("status", {"node": "hallucination_check"})
-            await _run_node(hallucination_check_node, state, started, timeout_seconds)
+            recorder.finish_node(generation_observation, state, {"answer": state["answer"]})
+            await trace_hub.publish(conversation_id, trace_event("generate", "completed", node_started))
+            async for event in run_traced("hallucination_check", hallucination_check_node):
+                yield event
             if state.get("hallucination_supported", False) or generation_attempt == 1:
                 break
-            await _run_node(prepare_regeneration_node, state, started, timeout_seconds)
+            async for event in run_traced("prepare_regeneration", prepare_regeneration_node):
+                yield event
+            await trace_hub.publish(conversation_id, trace_event("generate", "skipped"))
             yield sse_event("status", {"node": "generate", "regenerating": True})
         yield sse_event(
             "done",
@@ -179,14 +221,19 @@ async def chat_events(
                 or (rewrite_count >= 2 and average_score < threshold),
                 "hallucination_warning": bool(state.get("hallucination_warning")),
                 "unsupported_claims": state.get("unsupported_claims", []),
+                "graph": _graph_subgraph(passages),
+                "contexts": [str(passage.get("text", "")) for passage in passages],
             },
         )
+        recorder.flush()
     except TimeoutError:
+        recorder.flush()
         yield sse_event(
             "done",
             {"conversation_id": conversation_id, "sources": [], "timeout": True},
         )
     except Exception:
+        recorder.flush()
         yield sse_event("error", {"message": "The request could not be completed."})
 
 

@@ -81,3 +81,19 @@ curl.exe -N -X POST http://localhost:8000/chat `
 Requests have a 120-second global timeout to accommodate sequential local model
 swaps. Ollama, Qdrant, and model failures are converted into an SSE `error`
 event rather than an unhandled stream crash.
+
+The execution visualizer can subscribe to `WS /ws/agent-trace?conversation_id=...`
+while a chat request is running. It receives node lifecycle events with the
+status (`active`, `completed`, or `skipped`), timestamp, and duration.
+
+## Langfuse tracing
+
+The Langfuse SDK is optional at runtime. Configure `LANGFUSE_PUBLIC_KEY`,
+`LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST` to record each conversation and
+agent node. Use the local Langfuse dashboard at `http://localhost:3001` when
+running a self-hosted instance; leave the keys empty to disable tracing.
+
+Evaluation fixtures and the Ragas runner are in `eval/`. Replace the marked
+entries in `eval/golden_dataset.json`, then run `uv run --extra eval
+python eval/run_ragas.py`. The command exits non-zero when mean Faithfulness is
+at or below 0.7 and stores detailed timestamped output under `eval/results/`.
