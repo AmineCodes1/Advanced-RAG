@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+from graph_import.import_triplets import import_triplets
 from ingestion.chunker import TextChunk, TokenChunker
 from ingestion.embedder import Embedder
+from ingestion.graph_extractor import extract_triplets
 from ingestion.parser import PdfParser
 from ingestion.store import QdrantStore
 
 logger = logging.getLogger(__name__)
+
+load_dotenv(Path(__file__).resolve().parents[2] / "docker" / ".env")
 
 
 @dataclass(frozen=True)
@@ -18,6 +25,8 @@ class IngestionResult:
     source_file: str
     chunks_created: int
     vectors_inserted: int
+    graph_triplets_extracted: int
+    graph_triplets_imported: int
     embedding_seconds: float
     total_seconds: float
 
@@ -32,11 +41,17 @@ class IngestionPipeline:
         chunker: TokenChunker | None = None,
         embedder: Embedder | None = None,
         store: QdrantStore | None = None,
+        graph_enabled: bool | None = None,
     ) -> None:
         self.parser = parser or PdfParser()
         self.chunker = chunker or TokenChunker()
         self.embedder = embedder or Embedder()
         self.store = store or QdrantStore(Path(__file__).resolve().parents[1] / "data" / "qdrant")
+        self.graph_enabled = (
+            graph_enabled
+            if graph_enabled is not None
+            else os.getenv("GRAPH_INGESTION_ENABLED", "false").lower() == "true"
+        )
 
     def ingest_document(self, filepath: str | Path) -> IngestionResult:
         started = time.perf_counter()
@@ -48,7 +63,7 @@ class IngestionPipeline:
         chunks: list[TextChunk] = self.chunker.chunk(pages, path)
         logger.info("Created %d chunks", len(chunks))
         if not chunks:
-            return IngestionResult(path.name, 0, 0, 0.0, time.perf_counter() - started)
+            return IngestionResult(path.name, 0, 0, 0, 0, 0.0, time.perf_counter() - started)
 
         embedding_started = time.perf_counter()
         vectors = [list(vector) for vector in self.embedder.embed(chunk.text for chunk in chunks)]
@@ -57,10 +72,37 @@ class IngestionPipeline:
 
         inserted = self.store.upsert(chunks, vectors)
         logger.info("Inserted %d vectors into Qdrant", inserted)
+        graph_triplets_extracted = 0
+        graph_triplets_imported = 0
+        if self.graph_enabled:
+            password = os.getenv("NEO4J_PASSWORD")
+            if not password:
+                raise RuntimeError("NEO4J_PASSWORD is required when GRAPH_INGESTION_ENABLED=true")
+            triplets = [
+                triplet
+                for chunk in chunks
+                for triplet in extract_triplets(chunk.text, path.name, chunk.page)
+            ]
+            graph_triplets_extracted = len(triplets)
+            if triplets:
+                summary = import_triplets(
+                    triplets,
+                    uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+                    user=os.getenv("NEO4J_USER", "neo4j"),
+                    password=password,
+                )
+                graph_triplets_imported = summary["relationships_seen"]
+            logger.info(
+                "Extracted %d graph triplets and imported %d relationships",
+                graph_triplets_extracted,
+                graph_triplets_imported,
+            )
         return IngestionResult(
             source_file=path.name,
             chunks_created=len(chunks),
             vectors_inserted=inserted,
+            graph_triplets_extracted=graph_triplets_extracted,
+            graph_triplets_imported=graph_triplets_imported,
             embedding_seconds=embedding_seconds,
             total_seconds=time.perf_counter() - started,
         )

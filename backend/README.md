@@ -43,6 +43,20 @@ for the retrieval phase. Docling preserves structured markdown and tables. When
 the installed Docling release does not expose stable page-level exports, the
 chunk provenance uses `page: null` rather than inventing a page number.
 
+Graph extraction is opt-in because it calls Ollama once per text chunk and
+requires Neo4j. To extract and import graph triplets automatically during PDF
+ingestion, set these variables before starting the backend:
+
+```powershell
+$env:GRAPH_INGESTION_ENABLED = "true"
+$env:GRAPH_EXTRACTION_MODEL = "gemma3:4b"
+$env:NEO4J_PASSWORD = "your-local-password"
+```
+
+Ingestion responses then include `graph_triplets_extracted` and
+`graph_triplets_imported`. Re-ingesting a document is safe because Neo4j uses
+`MERGE` for entities and relationships.
+
 ## Minimal agent
 
 The MVP agent uses the measured Option A model split: Gemma 3 (`gemma3:4b`) for
