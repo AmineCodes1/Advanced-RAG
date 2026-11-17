@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from neo4j import GraphDatabase
+from dotenv import load_dotenv
+
+
+load_dotenv(Path(__file__).resolve().parents[3] / "docker" / ".env")
 
 
 def retrieve_graph(question: str, limit: int | None = None) -> list[dict[str, Any]]:
